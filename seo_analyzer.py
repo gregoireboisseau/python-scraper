@@ -47,14 +47,18 @@ def set_request_delay(delay: float):
 def rate_limited_request(url: str, **kwargs):
     """Effectue une requête HTTP avec rate limiting."""
     global _last_request_time
-    
+
     elapsed = time.time() - _last_request_time
     if elapsed < _request_delay:
         time.sleep(_request_delay - elapsed)
-    
-    response = requests.get(url, **kwargs)
-    _last_request_time = time.time()
-    return response
+
+    try:
+        response = requests.get(url, **kwargs)
+        _last_request_time = time.time()
+        return response
+    except requests.RequestException:
+        _last_request_time = time.time()
+        raise
 
 
 def get_robots_parser(url: str) -> RobotFileParser:
@@ -247,30 +251,40 @@ def is_internal_link(url: str, base_domain: str) -> bool:
     return parsed.netloc == base_domain or parsed.netloc == ''
 
 
-def fetch_sitemap(url: str) -> list[SiteMapData]:
+def fetch_sitemap(url: str, _visited: set = None) -> list[SiteMapData]:
     """Récupère et parse le sitemap.xml."""
+    # Éviter les boucles infinies avec les sitemaps qui se référencent
+    if _visited is None:
+        _visited = set()
+    
+    # Normaliser l'URL pour la détection de doublons
+    normalized = url.rstrip('/').lower()
+    if normalized in _visited:
+        return []
+    _visited.add(normalized)
+    
     parsed = urlparse(url)
     sitemap_url = f"{parsed.scheme}://{parsed.netloc}/sitemap.xml"
-    
+
     # Essayer aussi sitemap_index.xml
     sitemap_index_url = f"{parsed.scheme}://{parsed.netloc}/sitemap_index.xml"
-    
+
     sitemaps_data = []
-    
+
     for test_url in [sitemap_url, sitemap_index_url]:
         try:
-            response = requests.get(test_url, headers=HEADERS, timeout=10)
+            response = rate_limited_request(test_url, headers=HEADERS, timeout=10)
             if response.status_code == 200:
                 soup = BeautifulSoup(response.content, 'xml')
-                
+
                 # Sitemap index
                 for sitemap in soup.find_all('sitemap'):
                     loc = sitemap.find('loc')
                     if loc:
                         # Récupérer le sitemap enfant
-                        child_data = fetch_sitemap(loc.text)
+                        child_data = fetch_sitemap(loc.text, _visited)
                         sitemaps_data.extend(child_data)
-                
+
                 # URLset normal
                 for url_tag in soup.find_all('url'):
                     loc = url_tag.find('loc')
@@ -286,11 +300,11 @@ def fetch_sitemap(url: str) -> list[SiteMapData]:
                         if priority:
                             data.priority = priority.text
                         sitemaps_data.append(data)
-                
+
                 break
         except requests.RequestException:
             continue
-    
+
     return sitemaps_data
 
 
@@ -425,11 +439,11 @@ def analyze_page(url: str, base_domain: str, check_links: bool = False) -> tuple
             
             if is_internal_link(full_url, base_domain):
                 page.internal_links += 1
-                
+
                 # Vérifier si lien brisé (optionnel, lent)
                 if check_links:
                     try:
-                        check = requests.head(full_url, timeout=5, allow_redirects=True)
+                        check = rate_limited_request(full_url, timeout=5, allow_redirects=True)
                         if check.status_code >= 400:
                             page.broken_links.append(full_url)
                     except requests.RequestException:

@@ -42,14 +42,18 @@ def set_request_delay(delay: float):
 def rate_limited_request(url: str, **kwargs):
     """Effectue une requête HTTP avec rate limiting."""
     global _last_request_time
-    
+
     elapsed = time.time() - _last_request_time
     if elapsed < _request_delay:
         time.sleep(_request_delay - elapsed)
-    
-    response = requests.get(url, **kwargs)
-    _last_request_time = time.time()
-    return response
+
+    try:
+        response = requests.get(url, **kwargs)
+        _last_request_time = time.time()
+        return response
+    except requests.RequestException:
+        _last_request_time = time.time()
+        raise
 
 
 def get_robots_parser(url: str) -> RobotFileParser:
