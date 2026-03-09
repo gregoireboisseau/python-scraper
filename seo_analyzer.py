@@ -149,6 +149,155 @@ def detect_cms(html: str, url: str = "") -> str:
 
 
 @dataclass
+class KeywordDensity:
+    """Données de densité de mots-clés."""
+    word: str
+    count: int
+    density: float
+
+
+@dataclass
+class PageSpeedData:
+    """Données de performance PageSpeed Insights."""
+    performance_score: int = 0
+    accessibility_score: int = 0
+    best_practices_score: int = 0
+    seo_score: int = 0
+    pwa_score: int = 0
+    first_contentful_paint: str = ""
+    largest_contentful_paint: str = ""
+    speed_index: str = ""
+    time_to_interactive: str = ""
+    total_blocking_time: str = ""
+    cumulative_layout_shift: str = ""
+    error: str = ""
+
+
+def fetch_pagespeed_insights(url: str, strategy: str = "desktop") -> PageSpeedData:
+    """
+    Récupère les données de performance via l'API PageSpeed Insights de Google.
+
+    Args:
+        url: URL à analyser
+        strategy: 'desktop' ou 'mobile'
+
+    Returns:
+        PageSpeedData avec les scores et métriques
+    """
+    pagespeed_data = PageSpeedData()
+
+    try:
+        # API PageSpeed Insights (sans clé API - limité mais fonctionne)
+        api_url = f"https://www.googleapis.com/pagespeedonline/v5/runPagespeed?url={url}&strategy={strategy}"
+
+        response = requests.get(api_url, timeout=30)
+
+        if response.status_code == 403:
+            pagespeed_data.error = "Clé API requise pour PageSpeed Insights"
+            return pagespeed_data
+
+        response.raise_for_status()
+        data = response.json()
+
+        # Extraire les scores
+        categories = data.get('lighthouseResult', {}).get('categories', {})
+        pagespeed_data.performance_score = int(categories.get('performance', {}).get('score', 0) * 100) if categories.get('performance') else 0
+        pagespeed_data.accessibility_score = int(categories.get('accessibility', {}).get('score', 0) * 100) if categories.get('accessibility') else 0
+        pagespeed_data.best_practices_score = int(categories.get('best-practices', {}).get('score', 0) * 100) if categories.get('best-practices') else 0
+        pagespeed_data.seo_score = int(categories.get('seo', {}).get('score', 0) * 100) if categories.get('seo') else 0
+        pagespeed_data.pwa_score = int(categories.get('pwa', {}).get('score', 0) * 100) if categories.get('pwa') else 0
+
+        # Extraire les métriques de performance
+        audits = data.get('lighthouseResult', {}).get('audits', {})
+
+        if audits.get('first-contentful-paint', {}).get('displayValue'):
+            pagespeed_data.first_contentful_paint = audits['first-contentful-paint']['displayValue']
+
+        if audits.get('largest-contentful-paint', {}).get('displayValue'):
+            pagespeed_data.largest_contentful_paint = audits['largest-contentful-paint']['displayValue']
+
+        if audits.get('speed-index', {}).get('displayValue'):
+            pagespeed_data.speed_index = audits['speed-index']['displayValue']
+
+        if audits.get('interactive', {}).get('displayValue'):
+            pagespeed_data.time_to_interactive = audits['interactive']['displayValue']
+
+        if audits.get('total-blocking-time', {}).get('displayValue'):
+            pagespeed_data.total_blocking_time = audits['total-blocking-time']['displayValue']
+
+        if audits.get('cumulative-layout-shift', {}).get('displayValue'):
+            pagespeed_data.cumulative_layout_shift = audits['cumulative-layout-shift']['displayValue']
+
+    except requests.RequestException as e:
+        pagespeed_data.error = f"Erreur API: {str(e)}"
+    except Exception as e:
+        pagespeed_data.error = f"Erreur: {str(e)}"
+
+    return pagespeed_data
+
+
+def analyze_keyword_density(html_content: str, top_n: int = 10) -> list[KeywordDensity]:
+    """
+    Analyse la densité de mots-clés dans un contenu HTML.
+
+    Args:
+        html_content: Contenu HTML à analyser
+        top_n: Nombre de mots-clés à retourner
+
+    Returns:
+        Liste de KeywordDensity triée par fréquence
+    """
+    soup = BeautifulSoup(html_content, 'html.parser')
+
+    # Supprimer les scripts et styles
+    for script in soup(['script', 'style', 'nav', 'footer', 'header']):
+        script.decompose()
+
+    # Extraire le texte
+    text = soup.get_text(separator=' ')
+
+    # Nettoyer et tokeniser
+    text = text.lower()
+    words = re.findall(r'\b[a-zA-ZÀ-ÿ0-9]{3,}\b', text)
+
+    # Stop words en français et anglais
+    stop_words = {
+        'the', 'and', 'for', 'with', 'that', 'this', 'from', 'have', 'been', 'were', 'are',
+        'le', 'la', 'les', 'un', 'une', 'des', 'du', 'de', 'et', 'est', 'en', 'dans', 'sur',
+        'pour', 'par', 'plus', 'aux', 'que', 'qui', 'avec', 'leur', 'leurs', 'sont', 'tous',
+        'toutes', 'tout', 'faire', 'fait', 'also', 'will', 'just', 'there', 'their', 'what',
+        'you', 'your', 'our', 'was', 'but', 'not', 'they', 'them', 'its', 'has', 'had', 'his',
+        'her', 'she', 'he', 'can', 'may', 'would', 'could', 'should', 'about', 'into', 'more',
+        'some', 'other', 'than', 'then', 'these', 'those', 'such', 'only', 'through', 'where',
+        'when', 'which', 'while', 'after', 'before', 'between', 'both', 'each', 'get', 'got',
+        'very', 'even', 'well', 'back', 'still', 'way', 'take', 'because', 'come', 'came',
+        'going', 'goes', 'gone', 'give', 'given', 'good', 'great', 'know', 'like', 'look',
+        'make', 'made', 'many', 'most', 'much', 'need', 'new', 'now', 'old', 'one', 'own',
+        'say', 'said', 'see', 'set', 'show', 'small', 'so', 'too', 'two', 'under', 'up',
+        'use', 'used', 'using', 'want', 'work', 'year', 'years'
+    }
+
+    # Filtrer les stop words
+    filtered_words = [w for w in words if w not in stop_words]
+
+    # Compter les occurrences
+    from collections import Counter
+    word_counts = Counter(filtered_words)
+
+    # Calculer la densité
+    total_words = len(filtered_words) if filtered_words else 1
+    top_words = word_counts.most_common(top_n * 2)
+
+    result = []
+    for word, count in top_words:
+        if len(word) >= 3 and len(result) < top_n:
+            density = (count / total_words) * 100
+            result.append(KeywordDensity(word=word, count=count, density=round(density, 2)))
+
+    return result
+
+
+@dataclass
 class PageData:
     """Données SEO d'une page."""
     url: str
@@ -175,6 +324,8 @@ class PageData:
     lang: str = ""
     error: str = ""
     cms_detected: str = ""
+    keyword_density: list[KeywordDensity] = field(default_factory=list)
+    pagespeed: Optional[PageSpeedData] = None
 
 
 @dataclass
@@ -425,18 +576,21 @@ def analyze_page(url: str, base_domain: str, check_links: bool = False) -> tuple
         html_tag = soup.find('html')
         if html_tag and html_tag.get('lang'):
             page.lang = html_tag['lang']
-        
+
+        # Densité de mots-clés
+        page.keyword_density = analyze_keyword_density(response.text, top_n=10)
+
         # Liens
         for a in soup.find_all('a', href=True):
             href = a['href']
-            
+
             # Ignorer ancres, mailto, tel, javascript
             if href.startswith(('#', 'mailto:', 'tel:', 'javascript:', 'data:')):
                 continue
-            
+
             full_url = urljoin(url, href)
             parsed = urlparse(full_url)
-            
+
             if is_internal_link(full_url, base_domain):
                 page.internal_links += 1
 
@@ -450,11 +604,11 @@ def analyze_page(url: str, base_domain: str, check_links: bool = False) -> tuple
                         page.broken_links.append(full_url)
             else:
                 page.external_links += 1
-        
+
     except requests.RequestException as e:
         page.error = str(e)
         page.load_time = time.time() - start_time
-    
+
     return page, images
 
 
@@ -529,46 +683,66 @@ def crawl_site_for_seo(
     max_pages: int = 100,
     timeout: int = 10,
     check_links: bool = False,
-    verbose: bool = False
+    verbose: bool = False,
+    check_pagespeed: bool = False
 ) -> tuple[list[PageData], list[ImageData], list[SiteMapData]]:
     """Crawl un site pour analyse SEO complète."""
     base_domain = get_base_domain(start_url)
-    
+
     print(f"Domaine : {base_domain}")
     print(f"Max pages : {max_pages}")
     print()
-    
+
     # Phase 1 : Découvrir toutes les URLs
     urls_to_analyze, sitemap_data = discover_all_urls(start_url, max_pages, min(timeout, 5))
-    
+
     print(f"\n📄 {len(urls_to_analyze)} pages trouvées à analyser")
     if sitemap_data:
         print(f"🗺️  Sitemap : {len(sitemap_data)} URLs")
     print()
-    
+
     # Phase 2 : Analyser chaque page
     all_pages = []
     all_images = []
-    
+
     with tqdm(total=len(urls_to_analyze), desc="Analyse", unit="page") as pbar:
         for current_url in urls_to_analyze:
             current_url = current_url.rstrip('/')
-            
+
             if verbose:
                 print(f"\n[{len(all_pages) + 1}/{len(urls_to_analyze)}] {current_url}")
-            
+
             page, images = analyze_page(current_url, base_domain, check_links)
             all_pages.append(page)
             all_images.extend(images)
             pbar.update(1)
-            
+
             if verbose:
                 title_preview = page.title[:60] + "..." if page.title else "(vide)"
                 print(f"  Title: {title_preview}")
                 print(f"  H1: {len(page.h1)}, H2: {len(page.h2)}, Images: {page.images_count}")
                 if page.error:
                     print(f"  Erreur: {page.error}")
-    
+
+    # Phase 3 : PageSpeed Insights (optionnel, uniquement page d'accueil)
+    if check_pagespeed:
+        print("\n🚀 Récupération des données PageSpeed Insights...")
+        try:
+            pagespeed_data = fetch_pagespeed_insights(start_url, strategy="desktop")
+            if pagespeed_data and not pagespeed_data.error:
+                # Appliquer les données à la page d'accueil
+                for page in all_pages:
+                    if page.url == start_url.rstrip('/'):
+                        page.pagespeed = pagespeed_data
+                        break
+                print(f"  Performance: {pagespeed_data.performance_score}/100")
+                print(f"  Accessibilité: {pagespeed_data.accessibility_score}/100")
+                print(f"  SEO: {pagespeed_data.seo_score}/100")
+            else:
+                print(f"  ⚠️  {pagespeed_data.error if pagespeed_data else 'Erreur inconnue'}")
+        except Exception as e:
+            print(f"  ⚠️  Erreur PageSpeed: {e}")
+
     return all_pages, all_images, sitemap_data
 
 
@@ -629,15 +803,19 @@ def export_to_html(
     sitemap: list[SiteMapData],
     url: str,
     duration: float,
-    filepath: Path
+    filepath: Path,
+    include_pagespeed: bool = True
 ):
     """Génère un rapport HTML amélioré pour un rendu client professionnel.
-    
+
     Nouvelles fonctionnalités :
     - Statistiques de performance détaillées (page la plus rapide/lente, graphique)
     - Audit SEO avancé (metatags, OpenGraph, JSON-LD, Twitter Card)
     - Lien vers Google PageSpeed Insights
     - Design amélioré pour un rendu clé en main
+    
+    Args:
+        include_pagespeed: Si False, exclut la section PageSpeed Insights
     """
     
     # Calcul du score SEO
@@ -690,9 +868,9 @@ def export_to_html(
     pages_with_twitter = [p for p in pages if p.twitter_card]
     pages_with_canonical = [p for p in pages if p.canonical]
 
-    # Générer l'URL pour PageSpeed Insights
+    # Générer l'URL pour PageSpeed Insights (avec URL encodée)
     parsed_url = urlparse(url)
-    pagespeed_url = f"https://pagespeed.web.dev/analysis/{parsed_url.netloc}{parsed_url.path}/"
+    pagespeed_url = f"https://pagespeed.web.dev/analysis?url={html.escape(url)}"
 
     # Générer les données pour le graphique
     chart_data = []
@@ -775,6 +953,20 @@ def export_to_html(
         .seo-item-icon {{ min-width: 24px; margin-right: 0.75rem; }}
         .seo-item-content {{ flex: 1; }}
         .seo-item-status {{ font-weight: 500; }}
+        .pagescore-grid {{ display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 1rem; margin-top: 1rem; }}
+        .pagescore-item {{ text-align: center; padding: 1rem; background: #f8fafc; border-radius: 8px; }}
+        .pagescore-value {{ font-size: 2rem; font-weight: bold; }}
+        .pagescore-label {{ font-size: 0.85rem; color: var(--muted); margin-top: 0.25rem; }}
+        .metric-grid {{ display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 0.75rem; margin-top: 1rem; }}
+        .metric-item {{ padding: 0.75rem; background: #f1f5f9; border-radius: 6px; }}
+        .metric-name {{ font-size: 0.85rem; color: var(--muted); }}
+        .metric-value {{ font-weight: 600; margin-top: 0.25rem; }}
+        .keyword-table {{ width: 100%; border-collapse: collapse; margin-top: 1rem; }}
+        .keyword-table th {{ text-align: left; padding: 0.75rem; background: #f1f5f9; font-weight: 600; }}
+        .keyword-table td {{ padding: 0.75rem; border-bottom: 1px solid var(--border); }}
+        .keyword-bar {{ height: 8px; background: #e2e8f0; border-radius: 4px; overflow: hidden; width: 100px; }}
+        .keyword-fill {{ height: 100%; background: linear-gradient(90deg, #3b82f6, #8b5cf6); border-radius: 4px; }}
+        .broken-link {{ padding: 0.5rem; background: #fef2f2; border-left: 3px solid #ef4444; margin: 0.5rem 0; border-radius: 4px; }}
         @media (max-width: 768px) {{
             body {{ padding: 1rem; }}
             .grid {{ grid-template-columns: 1fr; }}
@@ -786,17 +978,17 @@ def export_to_html(
 <body>
     <div class="container">
         <div class="header">
-            <h1>🔍 Rapport SEO & Performance</h1>
-            <p>{html.escape(url)}</p>
-            <p>Généré le {datetime.now().strftime('%d/%m/%Y à %H:%M')} • Analyse complète</p>
+            <h1>🔍 Rapport SEO &amp; Performance</h1>
+            <p>''' + html.escape(url) + '''</p>
+            <p>Généré le ''' + datetime.now().strftime('%d/%m/%Y à %H:%M') + ''' • Analyse complète</p>
             <div class="score-card">
-                <div class="score">{score}/100</div>
-                <div class="label">{score_label}</div>
+                <div class="score">''' + str(score) + '''/100</div>
+                <div class="label">''' + score_label + '''</div>
             </div>
             <br>
-            <span class="badge badge-cms" style="font-size: 0.9rem; padding: 0.5rem 1rem;">📦 CMS détecté : {html.escape(cms_detected)}</span>
+            <span class="badge badge-cms" style="font-size: 0.9rem; padding: 0.5rem 1rem;">📦 CMS détecté : ''' + html.escape(cms_detected) + '''</span>
             <br>
-            <a href="{pagespeed_url}" target="_blank" class="pagespeed-btn">
+            <a href="''' + pagespeed_url + '''" target="_blank" class="pagespeed-btn">
                 🚀 Voir le rapport Google PageSpeed Insights
             </a>
         </div>
@@ -805,33 +997,33 @@ def export_to_html(
         <div class="grid">
             <div class="card">
                 <h2>📄 Pages analysées</h2>
-                <div class="stat"><span>Total</span><span class="stat-value">{len(pages)}</span></div>
-                <div class="stat"><span>Dans le sitemap</span><span class="stat-value">{len(sitemap)}</span></div>
-                <div class="stat"><span>Pages avec erreurs</span><span class="stat-value {'error' if errors else 'ok'}">{len(errors)}</span></div>
-                <div class="stat"><span>Pages avec liens brisés</span><span class="stat-value {'error' if any(p.broken_links for p in pages) else 'ok'}">{sum(1 for p in pages if p.broken_links)}</span></div>
+                <div class="stat"><span>Total</span><span class="stat-value">''' + str(len(pages)) + '''</span></div>
+                <div class="stat"><span>Dans le sitemap</span><span class="stat-value">''' + str(len(sitemap)) + '''</span></div>
+                <div class="stat"><span>Pages avec erreurs</span><span class="stat-value ''' + ('error' if errors else 'ok') + '''">''' + str(len(errors)) + '''</span></div>
+                <div class="stat"><span>Pages avec liens brisés</span><span class="stat-value ''' + ('error' if any(p.broken_links for p in pages) else 'ok') + '''">''' + str(sum(1 for p in pages if p.broken_links)) + '''</span></div>
             </div>
 
             <div class="card">
                 <h2>📝 Qualité du contenu</h2>
-                <div class="stat"><span>Pages sans title</span><span class="stat-value {'error' if no_title else 'ok'}">{len(no_title)}</span></div>
-                <div class="stat"><span>Pages sans meta description</span><span class="stat-value {'warn' if no_meta else 'ok'}">{len(no_meta)}</span></div>
-                <div class="stat"><span>Pages sans H1</span><span class="stat-value {'error' if no_h1 else 'ok'}">{len(no_h1)}</span></div>
-                <div class="stat"><span>Pages avec H1 multiples</span><span class="stat-value {'warn' if multi_h1 else 'ok'}">{len(multi_h1)}</span></div>
+                <div class="stat"><span>Pages sans title</span><span class="stat-value ''' + ('error' if no_title else 'ok') + '''">''' + str(len(no_title)) + '''</span></div>
+                <div class="stat"><span>Pages sans meta description</span><span class="stat-value ''' + ('warn' if no_meta else 'ok') + '''">''' + str(len(no_meta)) + '''</span></div>
+                <div class="stat"><span>Pages sans H1</span><span class="stat-value ''' + ('error' if no_h1 else 'ok') + '''">''' + str(len(no_h1)) + '''</span></div>
+                <div class="stat"><span>Pages avec H1 multiples</span><span class="stat-value ''' + ('warn' if multi_h1 else 'ok') + '''">''' + str(len(multi_h1)) + '''</span></div>
             </div>
 
             <div class="card">
                 <h2>🖼️ Images</h2>
-                <div class="stat"><span>Total des images</span><span class="stat-value">{len(images)}</span></div>
-                <div class="stat"><span>Images sans alt</span><span class="stat-value {'warn' if missing_alt else 'ok'}">{len(missing_alt)}</span></div>
-                <div class="stat"><span>Taux de conformité</span><span class="stat-value {'ok' if not missing_alt else 'warn'}">{round((1 - len(missing_alt)/len(images))*100 if images else 100, 1)}%</span></div>
+                <div class="stat"><span>Total des images</span><span class="stat-value">''' + str(len(images)) + '''</span></div>
+                <div class="stat"><span>Images sans alt</span><span class="stat-value ''' + ('warn' if missing_alt else 'ok') + '''">''' + str(len(missing_alt)) + '''</span></div>
+                <div class="stat"><span>Taux de conformité</span><span class="stat-value ''' + ('ok' if not missing_alt else 'warn') + '''">''' + str(round((1 - len(missing_alt)/len(images))*100 if images else 100, 1)) + '''%</span></div>
             </div>
 
             <div class="card">
                 <h2>⚡ Performance</h2>
-                <div class="stat"><span>Temps moyen</span><span class="stat-value">{avg_load_time:.2f}s</span></div>
-                <div class="stat"><span>Page la plus rapide</span><span class="stat-value ok">{fastest_page.load_time:.2f}s</span></div>
-                <div class="stat"><span>Page la plus lente</span><span class="stat-value {'warn' if slowest_page and slowest_page.load_time > 3 else 'ok'}">{slowest_page.load_time:.2f}s</span></div>
-                <div class="stat"><span>Pages lentes (&gt;3s)</span><span class="stat-value {'warn' if slow_pages else 'ok'}">{len(slow_pages)}</span></div>
+                <div class="stat"><span>Temps moyen</span><span class="stat-value">''' + str(round(avg_load_time, 2)) + '''s</span></div>
+                <div class="stat"><span>Page la plus rapide</span><span class="stat-value ok">''' + str(fastest_page.load_time if fastest_page else 0) + '''s</span></div>
+                <div class="stat"><span>Page la plus lente</span><span class="stat-value ''' + ('warn' if slowest_page and slowest_page.load_time > 3 else 'ok') + '''">''' + str(slowest_page.load_time if slowest_page else 0) + '''s</span></div>
+                <div class="stat"><span>Pages lentes (&gt;3s)</span><span class="stat-value ''' + ('warn' if slow_pages else 'ok') + '''">''' + str(len(slow_pages)) + '''</span></div>
             </div>
         </div>
 
@@ -840,12 +1032,12 @@ def export_to_html(
         <div class="grid">
             <div class="card">
                 <h2>🏆 Page la plus rapide</h2>
-                {fastest_html}
+                ''' + fastest_html + '''
             </div>
 
             <div class="card">
                 <h2>🐌 Page la plus lente</h2>
-                {slowest_html}
+                ''' + slowest_html + '''
             </div>
         </div>
 
@@ -855,75 +1047,133 @@ def export_to_html(
                 <canvas id="loadTimeChart"></canvas>
             </div>
         </div>
+'''
 
+    # Section PageSpeed Insights (optionnelle)
+    if include_pagespeed:
+        html_content += '''
+        <!-- Google PageSpeed Insights -->
+        <h2 class="section-title">🚀 Google PageSpeed Insights</h2>
+        <div class="card">
+            <p style="margin-bottom: 1rem;">Analyse des performances via l'API Google PageSpeed Insights. Les scores sont évalués sur 100.</p>
+            <div style="text-align: center; margin: 1.5rem 0;">
+                <a href="''' + pagespeed_url + '''" target="_blank" class="pagespeed-btn" style="font-size: 1.1rem; padding: 1rem 2rem;">
+                    🚀 Voir l'analyse complète sur PageSpeed Insights
+                </a>
+            </div>
+            <p style="margin-top: 1rem; font-size: 0.9rem; color: var(--muted);">💡 <strong>Note :</strong> Cliquez sur le bouton ci-dessus pour obtenir une analyse détaillée avec des recommandations personnalisées de Google.</p>
+        </div>
+'''
+
+    # Liens cassés
+    html_content += '''
+        <!-- Liens cassés -->
+        <h2 class="section-title">🔗 Liens cassés détectés</h2>
+'''
+    
+    # Collecter tous les liens cassés
+    all_broken_links = {}
+    for p in pages:
+        if p.broken_links:
+            for link in p.broken_links:
+                if link not in all_broken_links:
+                    all_broken_links[link] = p.url
+    
+    if all_broken_links:
+        html_content += f'''
+        <div class="card">
+            <p style="margin-bottom: 1rem;">{len(all_broken_links)} lien(s) cassé(s) détecté(s) sur le site.</p>
+            <ul class="list">
+'''
+        for link, source_page in list(all_broken_links.items())[:20]:
+            html_content += f'<li class="broken-link">🔴 <a href="{html.escape(link)}" target="_blank">{html.escape(link[:80])}...</a> (depuis: <a href="{html.escape(source_page)}" target="_blank">lien</a>)</li>'
+        
+        if len(all_broken_links) > 20:
+            html_content += f'<li style="padding: 0.75rem; color: var(--muted);">... et {len(all_broken_links) - 20} autres liens cassés</li>'
+        
+        html_content += '''
+            </ul>
+            <p style="margin-top: 1rem; padding: 0.75rem; background: #fef3c7; border-radius: 8px; font-size: 0.85rem;">
+                💡 <strong>Conseil :</strong> Corrigez ces liens cassés en mettant à jour les URLs ou en ajoutant des redirections 301.
+            </p>
+        </div>
+'''
+    else:
+        html_content += '''
+        <div class="card">
+            <p style="padding: 1rem; color: #22c55e; font-weight: 500;">✅ Aucun lien cassé détecté sur le site.</p>
+        </div>
+'''
+    
+    html_content += '''
         <!-- SEO Avancé -->
         <h2 class="section-title">🔎 Audit SEO Avancé</h2>
         <div class="grid">
             <div class="card">
                 <h2>📋 Meta Tags</h2>
                 <div class="seo-item">
-                    <span class="seo-item-icon">{'✅' if all(p.title for p in pages) else '⚠️'}</span>
+                    <span class="seo-item-icon">''' + ('✅' if all(p.title for p in pages) else '⚠️') + '''</span>
                     <div class="seo-item-content">
                         <strong>Balise &lt;title&gt;</strong>
-                        <p style="color: var(--muted); font-size: 0.85rem;">{len([p for p in pages if p.title])}/{len(pages)} pages avec un title</p>
+                        <p style="color: var(--muted); font-size: 0.85rem;">''' + str(len([p for p in pages if p.title])) + '/' + str(len(pages)) + ''' pages avec un title</p>
                     </div>
-                    <span class="seo-item-status {'ok' if all(p.title for p in pages) else 'warn'}">{round(len([p for p in pages if p.title])/len(pages)*100 if pages else 0, 1)}%</span>
+                    <span class="seo-item-status ''' + ('ok' if all(p.title for p in pages) else 'warn') + '''">''' + str(round(len([p for p in pages if p.title])/len(pages)*100 if pages else 0, 1)) + '''%</span>
                 </div>
                 <div class="seo-item">
-                    <span class="seo-item-icon">{'✅' if all(p.meta_description for p in pages) else '⚠️'}</span>
+                    <span class="seo-item-icon">''' + ('✅' if all(p.meta_description for p in pages) else '⚠️') + '''</span>
                     <div class="seo-item-content">
                         <strong>Meta Description</strong>
-                        <p style="color: var(--muted); font-size: 0.85rem;">{len([p for p in pages if p.meta_description])}/{len(pages)} pages avec une description</p>
+                        <p style="color: var(--muted); font-size: 0.85rem;">''' + str(len([p for p in pages if p.meta_description])) + '/' + str(len(pages)) + ''' pages avec une description</p>
                     </div>
-                    <span class="seo-item-status {'ok' if all(p.meta_description for p in pages) else 'warn'}">{round(len([p for p in pages if p.meta_description])/len(pages)*100 if pages else 0, 1)}%</span>
+                    <span class="seo-item-status ''' + ('ok' if all(p.meta_description for p in pages) else 'warn') + '''">''' + str(round(len([p for p in pages if p.meta_description])/len(pages)*100 if pages else 0, 1)) + '''%</span>
                 </div>
                 <div class="seo-item">
-                    <span class="seo-item-icon">{'✅' if all(p.canonical for p in pages) else '⚠️'}</span>
+                    <span class="seo-item-icon">''' + ('✅' if all(p.canonical for p in pages) else '⚠️') + '''</span>
                     <div class="seo-item-content">
                         <strong>URL Canonique</strong>
-                        <p style="color: var(--muted); font-size: 0.85rem;">{len([p for p in pages if p.canonical])}/{len(pages)} pages avec canonical</p>
+                        <p style="color: var(--muted); font-size: 0.85rem;">''' + str(len([p for p in pages if p.canonical])) + '/' + str(len(pages)) + ''' pages avec canonical</p>
                     </div>
-                    <span class="seo-item-status {'ok' if all(p.canonical for p in pages) else 'warn'}">{round(len([p for p in pages if p.canonical])/len(pages)*100 if pages else 0, 1)}%</span>
+                    <span class="seo-item-status ''' + ('ok' if all(p.canonical for p in pages) else 'warn') + '''">''' + str(round(len([p for p in pages if p.canonical])/len(pages)*100 if pages else 0, 1)) + '''%</span>
                 </div>
                 <div class="seo-item">
-                    <span class="seo-item-icon">{'✅' if all(p.lang for p in pages) else '⚠️'}</span>
+                    <span class="seo-item-icon">''' + ('✅' if all(p.lang for p in pages) else '⚠️') + '''</span>
                     <div class="seo-item-content">
                         <strong>Attribut Lang</strong>
-                        <p style="color: var(--muted); font-size: 0.85rem;">{len([p for p in pages if p.lang])}/{len(pages)} pages avec lang défini</p>
+                        <p style="color: var(--muted); font-size: 0.85rem;">''' + str(len([p for p in pages if p.lang])) + '/' + str(len(pages)) + ''' pages avec lang défini</p>
                     </div>
-                    <span class="seo-item-status {'ok' if all(p.lang for p in pages) else 'warn'}">{round(len([p for p in pages if p.lang])/len(pages)*100 if pages else 0, 1)}%</span>
+                    <span class="seo-item-status ''' + ('ok' if all(p.lang for p in pages) else 'warn') + '''">''' + str(round(len([p for p in pages if p.lang])/len(pages)*100 if pages else 0, 1)) + '''%</span>
                 </div>
             </div>
 
             <div class="card">
                 <h2>🌐 Open Graph (Réseaux sociaux)</h2>
                 <div class="seo-item">
-                    <span class="seo-item-icon">{'✅' if pages_with_og else '❌'}</span>
+                    <span class="seo-item-icon">''' + ('✅' if pages_with_og else '❌') + '''</span>
                     <div class="seo-item-content">
                         <strong>Présence Open Graph</strong>
-                        <p style="color: var(--muted); font-size: 0.85rem;">{len(pages_with_og)}/{len(pages)} pages avec OG tags</p>
+                        <p style="color: var(--muted); font-size: 0.85rem;">''' + str(len(pages_with_og)) + '/' + str(len(pages)) + ''' pages avec OG tags</p>
                     </div>
-                    <span class="badge badge-og">{round(len(pages_with_og)/len(pages)*100 if pages else 0, 1)}%</span>
+                    <span class="badge badge-og">''' + str(round(len(pages_with_og)/len(pages)*100 if pages else 0, 1)) + '''%</span>
                 </div>
                 <div class="seo-item">
                     <span class="seo-item-icon">▫️</span>
                     <div class="seo-item-content">
                         <strong>og:title</strong>
-                        <p style="color: var(--muted); font-size: 0.85rem;">{len([p for p in pages if p.og_title])} pages</p>
+                        <p style="color: var(--muted); font-size: 0.85rem;">''' + str(len([p for p in pages if p.og_title])) + ''' pages</p>
                     </div>
                 </div>
                 <div class="seo-item">
                     <span class="seo-item-icon">▫️</span>
                     <div class="seo-item-content">
                         <strong>og:description</strong>
-                        <p style="color: var(--muted); font-size: 0.85rem;">{len([p for p in pages if p.og_description])} pages</p>
+                        <p style="color: var(--muted); font-size: 0.85rem;">''' + str(len([p for p in pages if p.og_description])) + ''' pages</p>
                     </div>
                 </div>
                 <div class="seo-item">
                     <span class="seo-item-icon">▫️</span>
                     <div class="seo-item-content">
                         <strong>og:image</strong>
-                        <p style="color: var(--muted); font-size: 0.85rem;">{len([p for p in pages if p.og_image])} pages</p>
+                        <p style="color: var(--muted); font-size: 0.85rem;">''' + str(len([p for p in pages if p.og_image])) + ''' pages</p>
                     </div>
                 </div>
                 <p style="margin-top: 1rem; padding: 0.75rem; background: #f0f9ff; border-radius: 8px; font-size: 0.85rem;">
@@ -934,18 +1184,18 @@ def export_to_html(
             <div class="card">
                 <h2>🐦 Twitter Card</h2>
                 <div class="seo-item">
-                    <span class="seo-item-icon">{'✅' if pages_with_twitter else '❌'}</span>
+                    <span class="seo-item-icon">''' + ('✅' if pages_with_twitter else '❌') + '''</span>
                     <div class="seo-item-content">
                         <strong>Présence Twitter Card</strong>
-                        <p style="color: var(--muted); font-size: 0.85rem;">{len(pages_with_twitter)}/{len(pages)} pages avec Twitter Card</p>
+                        <p style="color: var(--muted); font-size: 0.85rem;">''' + str(len(pages_with_twitter)) + '/' + str(len(pages)) + ''' pages avec Twitter Card</p>
                     </div>
-                    <span class="badge badge-twitter">{round(len(pages_with_twitter)/len(pages)*100 if pages else 0, 1)}%</span>
+                    <span class="badge badge-twitter">''' + str(round(len(pages_with_twitter)/len(pages)*100 if pages else 0, 1)) + '''%</span>
                 </div>
                 <div class="seo-item">
                     <span class="seo-item-icon">▫️</span>
                     <div class="seo-item-content">
                         <strong>twitter:card</strong>
-                        <p style="color: var(--muted); font-size: 0.85rem;">{len([p for p in pages if p.twitter_card])} pages configurées</p>
+                        <p style="color: var(--muted); font-size: 0.85rem;">''' + str(len([p for p in pages if p.twitter_card])) + ''' pages configurées</p>
                     </div>
                 </div>
                 <p style="margin-top: 1rem; padding: 0.75rem; background: #f0f9ff; border-radius: 8px; font-size: 0.85rem;">
@@ -971,13 +1221,73 @@ def export_to_html(
             </div>
         </div>
 
+        <!-- Densité de mots-clés -->
+        <h2 class="section-title">🔑 Densité de mots-clés (Top 10 pages)</h2>
+        <p style="margin-bottom: 1rem; color: var(--muted);">Analyse des mots-clés les plus fréquents sur les 10 pages les plus importantes (par nombre de mots).</p>
+'''
+
+    # Trier les pages par nombre de mots et prendre le top 10
+    sorted_pages_by_words = sorted([p for p in pages if p.word_count > 0], key=lambda p: p.word_count, reverse=True)[:10]
+    
+    if sorted_pages_by_words:
+        for idx, page in enumerate(sorted_pages_by_words, 1):
+            page_title = page.title[:60] + '...' if page.title and len(page.title) > 60 else (page.title or 'Sans titre')
+            
+            html_content += f'''
+        <div class="card" style="margin-bottom: 1.5rem;">
+            <h2>📄 {idx}. <a href="{html.escape(page.url)}" target="_blank" style="color: var(--primary);">{html.escape(page_title)}</a></h2>
+            <p style="font-size: 0.85rem; color: var(--muted); margin-bottom: 0.5rem;">{page.word_count} mots • {len(page.keyword_density)} mots-clés analysés</p>
+            
+            <table class="keyword-table">
+                <thead>
+                    <tr>
+                        <th>Mot-clé</th>
+                        <th>Occurrences</th>
+                        <th>Densité</th>
+                        <th>Visualisation</th>
+                    </tr>
+                </thead>
+                <tbody>
+'''
+            max_density = max([kw.density for kw in page.keyword_density]) if page.keyword_density else 1
+            
+            for kw in page.keyword_density:
+                bar_width = (kw.density / max_density * 100) if max_density > 0 else 0
+                html_content += f'''
+                    <tr>
+                        <td><strong>{html.escape(kw.word)}</strong></td>
+                        <td>{kw.count}</td>
+                        <td>{kw.density}%</td>
+                        <td>
+                            <div class="keyword-bar">
+                                <div class="keyword-fill" style="width: {bar_width}%;"></div>
+                            </div>
+                        </td>
+                    </tr>
+'''
+            
+            html_content += '''
+                </tbody>
+            </table>
+        </div>
+'''
+    else:
+        html_content += '''
+        <div class="card">
+            <p style="padding: 1rem; color: var(--muted);">Aucune donnée de densité de mots-clés disponible.</p>
+        </div>
+'''
+
+    # Section Recommandations PageSpeed (optionnelle)
+    if include_pagespeed:
+        html_content += '''
         <!-- Recommandations PageSpeed -->
         <h2 class="section-title">🚀 Optimisations recommandées</h2>
         <div class="card">
             <h2>💡 Améliorations PageSpeed Insights</h2>
             <p style="margin-bottom: 1rem;">Cliquez sur le bouton ci-dessous pour obtenir une analyse détaillée des performances de votre site avec des recommandations personnalisées de Google :</p>
             <div style="text-align: center;">
-                <a href="{pagespeed_url}" target="_blank" class="pagespeed-btn" style="font-size: 1.1rem; padding: 1rem 2rem;">
+                <a href="''' + pagespeed_url + '''" target="_blank" class="pagespeed-btn" style="font-size: 1.1rem; padding: 1rem 2rem;">
                     🚀 Lancer l'analyse PageSpeed Insights
                 </a>
             </div>
@@ -1242,6 +1552,289 @@ def get_default_output_path(url: str) -> Path:
     return downloads / site_name
 
 
+def export_to_pdf(
+    pages: list[PageData],
+    images: list[ImageData],
+    sitemap: list[SiteMapData],
+    url: str,
+    duration: float,
+    filepath: Path,
+    include_pagespeed: bool = False
+):
+    """
+    Génère un rapport PDF à partir du rapport HTML.
+    
+    Args:
+        include_pagespeed: Si False (recommandé pour PDF), exclut les sections PageSpeed
+    """
+    try:
+        from weasyprint import HTML, CSS
+        import io
+        
+        # Générer d'abord le HTML
+        html_buffer = io.StringIO()
+        
+        # Créer un HTML simplifié pour le PDF (sans JavaScript, sans graphiques interactifs)
+        score = calculate_seo_score(pages, images)
+        
+        # Déterminer la couleur du score
+        if score >= 80:
+            score_color = "#22c55e"
+            score_label = "Excellent"
+        elif score >= 60:
+            score_color = "#f59e0b"
+            score_label = "Moyen"
+        elif score >= 40:
+            score_color = "#f97316"
+            score_label = "À améliorer"
+        else:
+            score_color = "#ef4444"
+            score_label = "Critique"
+        
+        # Détection CMS
+        cms_counts = {}
+        for p in pages:
+            if p.cms_detected:
+                cms_counts[p.cms_detected] = cms_counts.get(p.cms_detected, 0) + 1
+        cms_detected = max(cms_counts.items(), key=lambda x: x[1])[0] if cms_counts else "Inconnu"
+        
+        # Calcul des stats
+        errors = [p for p in pages if p.error or p.status_code != 200]
+        no_title = [p for p in pages if not p.title]
+        no_meta = [p for p in pages if not p.meta_description]
+        no_h1 = [p for p in pages if not p.h1]
+        multi_h1 = [p for p in pages if len(p.h1) > 1]
+        missing_alt = [i for i in images if not i.alt]
+        slow_pages = [p for p in pages if p.load_time > 3]
+        
+        # Stats de performance
+        pages_with_time = [p for p in pages if p.load_time > 0]
+        if pages_with_time:
+            fastest_page = min(pages_with_time, key=lambda p: p.load_time)
+            slowest_page = max(pages_with_time, key=lambda p: p.load_time)
+            avg_load_time = sum(p.load_time for p in pages_with_time) / len(pages_with_time)
+        else:
+            fastest_page = slowest_page = None
+            avg_load_time = 0
+        
+        # Stats SEO
+        pages_with_og = [p for p in pages if p.og_title or p.og_description or p.og_image]
+        pages_with_twitter = [p for p in pages if p.twitter_card]
+        
+        # Trier les pages par nombre de mots pour la densité de mots-clés
+        sorted_pages_by_words = sorted([p for p in pages if p.word_count > 0], key=lambda p: p.word_count, reverse=True)[:10]
+        
+        # Collecter les liens cassés
+        all_broken_links = {}
+        for p in pages:
+            if p.broken_links:
+                for link in p.broken_links:
+                    if link not in all_broken_links:
+                        all_broken_links[link] = p.url
+        
+        # Générer le HTML simplifié pour PDF
+        pdf_html = f'''<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <title>Rapport SEO - {html.escape(url)}</title>
+    <style>
+        @page {{ size: A4; margin: 2cm; }}
+        body {{ font-family: Arial, sans-serif; line-height: 1.6; color: #1e293b; }}
+        h1 {{ color: #667eea; font-size: 24px; border-bottom: 2px solid #667eea; padding-bottom: 10px; }}
+        h2 {{ color: #3b82f6; font-size: 18px; margin-top: 30px; border-bottom: 1px solid #e2e8f0; padding-bottom: 5px; }}
+        h3 {{ color: #1e293b; font-size: 16px; margin-top: 20px; }}
+        .score-box {{ text-align: center; padding: 20px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; border-radius: 10px; margin: 20px 0; }}
+        .score-value {{ font-size: 48px; font-weight: bold; }}
+        .score-label {{ font-size: 18px; opacity: 0.9; }}
+        table {{ width: 100%; border-collapse: collapse; margin: 15px 0; }}
+        th, td {{ border: 1px solid #e2e8f0; padding: 10px; text-align: left; }}
+        th {{ background: #f1f5f9; font-weight: 600; }}
+        .stat-grid {{ display: grid; grid-template-columns: repeat(2, 1fr); gap: 15px; margin: 15px 0; }}
+        .stat-card {{ background: #f8fafc; padding: 15px; border-radius: 8px; border: 1px solid #e2e8f0; }}
+        .stat-value {{ font-size: 24px; font-weight: bold; color: #3b82f6; }}
+        .stat-label {{ font-size: 14px; color: #64748b; margin-top: 5px; }}
+        .ok {{ color: #22c55e; }}
+        .warn {{ color: #f59e0b; }}
+        .error {{ color: #ef4444; }}
+        ul {{ margin: 10px 0; padding-left: 20px; }}
+        li {{ margin: 5px 0; }}
+        .page-break {{ page-break-before: always; }}
+        .keyword-table {{ width: 100%; font-size: 12px; }}
+        .keyword-table th {{ font-size: 11px; }}
+        a {{ color: #3b82f6; text-decoration: none; }}
+    </style>
+</head>
+<body>
+    <h1>🔍 Rapport SEO &amp; Performance</h1>
+    <p><strong>Site :</strong> {html.escape(url)}</p>
+    <p><strong>Date :</strong> {datetime.now().strftime('%d/%m/%Y à %H:%M')}</p>
+    <p><strong>CMS détecté :</strong> {html.escape(cms_detected)}</p>
+    
+    <div class="score-box">
+        <div class="score-value" style="color: {score_color};">{score}/100</div>
+        <div class="score-label">{score_label}</div>
+    </div>
+    
+    <h2>📊 Vue d'ensemble</h2>
+    <div class="stat-grid">
+        <div class="stat-card">
+            <div class="stat-value">{len(pages)}</div>
+            <div class="stat-label">Pages analysées</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-value">{len(sitemap)}</div>
+            <div class="stat-label">URLs dans le sitemap</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-value {'error' if errors else 'ok'}">{len(errors)}</div>
+            <div class="stat-label">Pages avec erreurs</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-value {'error' if all_broken_links else 'ok'}">{len(all_broken_links)}</div>
+            <div class="stat-label">Liens cassés</div>
+        </div>
+    </div>
+    
+    <h2>📝 Qualité du contenu</h2>
+    <div class="stat-grid">
+        <div class="stat-card">
+            <div class="stat-value {'error' if no_title else 'ok'}">{len(no_title)}</div>
+            <div class="stat-label">Pages sans title</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-value {'warn' if no_meta else 'ok'}">{len(no_meta)}</div>
+            <div class="stat-label">Pages sans meta description</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-value {'error' if no_h1 else 'ok'}">{len(no_h1)}</div>
+            <div class="stat-label">Pages sans H1</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-value {'warn' if multi_h1 else 'ok'}">{len(multi_h1)}</div>
+            <div class="stat-label">Pages avec H1 multiples</div>
+        </div>
+    </div>
+    
+    <h2>🖼️ Images</h2>
+    <div class="stat-grid">
+        <div class="stat-card">
+            <div class="stat-value">{len(images)}</div>
+            <div class="stat-label">Total des images</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-value {'warn' if missing_alt else 'ok'}">{len(missing_alt)}</div>
+            <div class="stat-label">Images sans alt</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-value {'ok' if not missing_alt else 'warn'}">{round((1 - len(missing_alt)/len(images))*100 if images else 100, 1)}%</div>
+            <div class="stat-label">Taux de conformité</div>
+        </div>
+    </div>
+    
+    <h2>⚡ Performance</h2>
+    <div class="stat-grid">
+        <div class="stat-card">
+            <div class="stat-value">{avg_load_time:.2f}s</div>
+            <div class="stat-label">Temps de chargement moyen</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-value ok">{fastest_page.load_time:.2f}s</div>
+            <div class="stat-label">Page la plus rapide</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-value {'warn' if slowest_page and slowest_page.load_time > 3 else 'ok'}">{slowest_page.load_time:.2f}s</div>
+            <div class="stat-label">Page la plus lente</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-value {'warn' if slow_pages else 'ok'}">{len(slow_pages)}</div>
+            <div class="stat-label">Pages lentes (&gt;3s)</div>
+        </div>
+    </div>
+    
+    <div class="page-break"></div>
+    <h2>🔎 Audit SEO Avancé</h2>
+    
+    <h3>📋 Meta Tags</h3>
+    <table>
+        <tr><th>Balise</th><th>Conformité</th></tr>
+        <tr><td>&lt;title&gt;</td><td class="{'ok' if all(p.title for p in pages) else 'warn'}">{round(len([p for p in pages if p.title])/len(pages)*100 if pages else 0, 1)}%</td></tr>
+        <tr><td>Meta Description</td><td class="{'ok' if all(p.meta_description for p in pages) else 'warn'}">{round(len([p for p in pages if p.meta_description])/len(pages)*100 if pages else 0, 1)}%</td></tr>
+        <tr><td>URL Canonique</td><td class="{'ok' if all(p.canonical for p in pages) else 'warn'}">{round(len([p for p in pages if p.canonical])/len(pages)*100 if pages else 0, 1)}%</td></tr>
+        <tr><td>Attribut Lang</td><td class="{'ok' if all(p.lang for p in pages) else 'warn'}">{round(len([p for p in pages if p.lang])/len(pages)*100 if pages else 0, 1)}%</td></tr>
+    </table>
+    
+    <h3>🌐 Open Graph</h3>
+    <p>{len(pages_with_og)}/{len(pages)} pages avec OG tags ({round(len(pages_with_og)/len(pages)*100 if pages else 0, 1)}%)</p>
+    <ul>
+        <li>og:title: {len([p for p in pages if p.og_title])} pages</li>
+        <li>og:description: {len([p for p in pages if p.og_description])} pages</li>
+        <li>og:image: {len([p for p in pages if p.og_image])} pages</li>
+    </ul>
+    
+    <h3>🐦 Twitter Card</h3>
+    <p>{len(pages_with_twitter)}/{len(pages)} pages avec Twitter Card ({round(len(pages_with_twitter)/len(pages)*100 if pages else 0, 1)}%)</p>
+'''
+        
+        # Ajouter densité de mots-clés
+        pdf_html += '''
+    <div class="page-break"></div>
+    <h2>🔑 Densité de mots-clés (Top 10 pages)</h2>
+'''
+        
+        for idx, page in enumerate(sorted_pages_by_words, 1):
+            page_title = html.escape(page.title[:80] + '...' if page.title and len(page.title) > 80 else (page.title or 'Sans titre'))
+            pdf_html += f'''
+    <h3>{idx}. {page_title}</h3>
+    <p>{page.word_count} mots</p>
+    <table class="keyword-table">
+        <tr><th>Mot-clé</th><th>Occurrences</th><th>Densité</th></tr>
+'''
+            for kw in page.keyword_density[:5]:  # Top 5 par page pour PDF
+                pdf_html += f'''
+        <tr><td>{html.escape(kw.word)}</td><td>{kw.count}</td><td>{kw.density}%</td></tr>
+'''
+            pdf_html += '''
+    </table>
+'''
+        
+        # Ajouter liens cassés
+        if all_broken_links:
+            pdf_html += '''
+    <div class="page-break"></div>
+    <h2>🔗 Liens cassés détectés</h2>
+    <table>
+        <tr><th>Lien cassé</th><th>Page source</th></tr>
+'''
+            for link, source_page in list(all_broken_links.items())[:30]:
+                pdf_html += f'''
+        <tr><td style="font-size: 11px;">{html.escape(link[:60])}...</td><td style="font-size: 11px;">{html.escape(source_page[:50])}...</td></tr>
+'''
+            pdf_html += '''
+    </table>
+'''
+        
+        pdf_html += '''
+</body>
+</html>
+'''
+        
+        # Générer le PDF
+        html_buffer.write(pdf_html)
+        html_buffer.seek(0)
+        
+        # Conversion en PDF
+        html_doc = HTML(string=html_buffer.read(), base_url=str(filepath.parent))
+        html_doc.write_pdf(str(filepath))
+        
+        print(f"📄 Rapport PDF : {filepath}")
+        
+    except ImportError:
+        print("⚠️  weasyprint n'est pas installé. Pour installer : pip install weasyprint")
+    except Exception as e:
+        print(f"⚠️  Erreur lors de la génération du PDF : {e}")
+
+
 def main():
     parser = argparse.ArgumentParser(
         description='Analyseur SEO complet pour site web.'
@@ -1259,6 +1852,10 @@ def main():
                         help='Vérifier les liens brisés (plus lent)')
     parser.add_argument('-v', '--verbose', action='store_true',
                         help='Afficher les détails de l\'analyse')
+    parser.add_argument('--pagespeed', action='store_true',
+                        help='Récupérer les données PageSpeed Insights (page d\'accueil)')
+    parser.add_argument('--no-pdf', action='store_true',
+                        help='Désactiver la génération du rapport PDF')
     parser.add_argument('--images-only', action='store_true',
                         help='Télécharger uniquement les images (mode scraper)')
     parser.add_argument('--image-dest', type=Path, default=None,
@@ -1303,7 +1900,8 @@ def main():
         args.max_pages,
         args.timeout,
         args.check_links,
-        args.verbose
+        args.verbose,
+        args.pagespeed
     )
 
     duration = time.time() - start_time
@@ -1330,6 +1928,11 @@ def main():
             for img in images:
                 writer.writerow([img.url, img.alt, img.title, img.width, img.height, img.loading, img.page_url])
         print(f"🖼️  Export images : {img_path}")
+
+    # Export PDF automatique (sans PageSpeed) - sauf si --no-pdf
+    if not args.no_pdf:
+        pdf_path = output_folder / 'rapport_seo.pdf'
+        export_to_pdf(pages, images, sitemap, args.url, duration, pdf_path, include_pagespeed=False)
 
     print()
 

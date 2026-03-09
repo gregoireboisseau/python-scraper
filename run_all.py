@@ -44,6 +44,10 @@ def main():
                         help='Vérifier les liens brisés (plus lent)')
     parser.add_argument('-v', '--verbose', action='store_true',
                         help='Mode verbose')
+    parser.add_argument('--pagespeed', action='store_true',
+                        help='Récupérer les données PageSpeed Insights')
+    parser.add_argument('--no-pdf', action='store_true',
+                        help='Désactiver la génération du rapport PDF')
     
     # Mode de fonctionnement (mutuellement exclusifs)
     mode_group = parser.add_argument_group('Mode de fonctionnement')
@@ -103,9 +107,15 @@ def main():
 
         if args.check_links:
             cmd.append('-l')
-        
+
         if args.verbose:
             cmd.append('-v')
+
+        if args.pagespeed:
+            cmd.append('--pagespeed')
+
+        if args.no_pdf:
+            cmd.append('--no-pdf')
 
         results['seo'] = run_command(cmd, "📊 ANALYSE SEO DU SITE")
     else:
