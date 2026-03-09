@@ -631,30 +631,39 @@ def export_to_html(
     duration: float,
     filepath: Path
 ):
-    """Génère un rapport HTML coloré et lisible."""
-    score = calculate_seo_score(pages, images)
+    """Génère un rapport HTML amélioré pour un rendu client professionnel.
     
+    Nouvelles fonctionnalités :
+    - Statistiques de performance détaillées (page la plus rapide/lente, graphique)
+    - Audit SEO avancé (metatags, OpenGraph, JSON-LD, Twitter Card)
+    - Lien vers Google PageSpeed Insights
+    - Design amélioré pour un rendu clé en main
+    """
+    
+    # Calcul du score SEO
+    score = calculate_seo_score(pages, images)
+
     # Déterminer la couleur du score
     if score >= 80:
-        score_color = "#22c55e"  # vert
+        score_color = "#22c55e"
         score_label = "Excellent"
     elif score >= 60:
-        score_color = "#f59e0b"  # orange
+        score_color = "#f59e0b"
         score_label = "Moyen"
     elif score >= 40:
-        score_color = "#f97316"  # orange foncé
+        score_color = "#f97316"
         score_label = "À améliorer"
     else:
-        score_color = "#ef4444"  # rouge
+        score_color = "#ef4444"
         score_label = "Critique"
-    
+
     # Détection CMS
     cms_counts = {}
     for p in pages:
         if p.cms_detected:
             cms_counts[p.cms_detected] = cms_counts.get(p.cms_detected, 0) + 1
     cms_detected = max(cms_counts.items(), key=lambda x: x[1])[0] if cms_counts else "Inconnu"
-    
+
     # Calcul des stats
     errors = [p for p in pages if p.error or p.status_code != 200]
     no_title = [p for p in pages if not p.title]
@@ -663,27 +672,80 @@ def export_to_html(
     multi_h1 = [p for p in pages if len(p.h1) > 1]
     missing_alt = [i for i in images if not i.alt]
     slow_pages = [p for p in pages if p.load_time > 3]
-    
+
+    # Stats de performance
+    pages_with_time = [p for p in pages if p.load_time > 0]
+    if pages_with_time:
+        fastest_page = min(pages_with_time, key=lambda p: p.load_time)
+        slowest_page = max(pages_with_time, key=lambda p: p.load_time)
+        avg_load_time = sum(p.load_time for p in pages_with_time) / len(pages_with_time)
+        sorted_by_time = sorted(pages_with_time, key=lambda p: p.load_time)
+    else:
+        fastest_page = slowest_page = None
+        avg_load_time = 0
+        sorted_by_time = []
+
+    # Stats SEO avancé
+    pages_with_og = [p for p in pages if p.og_title or p.og_description or p.og_image]
+    pages_with_twitter = [p for p in pages if p.twitter_card]
+    pages_with_canonical = [p for p in pages if p.canonical]
+
+    # Générer l'URL pour PageSpeed Insights
+    parsed_url = urlparse(url)
+    pagespeed_url = f"https://pagespeed.web.dev/analysis/{parsed_url.netloc}{parsed_url.path}/"
+
+    # Générer les données pour le graphique
+    chart_data = []
+    for p in sorted_by_time[:20]:  # Top 20 pages
+        chart_data.append({
+            'url': p.url[:50] + '...' if len(p.url) > 50 else p.url,
+            'time': round(p.load_time, 2)
+        })
+
+    # Générer les sections HTML pour les performances
+    if fastest_page:
+        fastest_title = fastest_page.title[:50] + '...' if fastest_page.title and len(fastest_page.title) > 50 else (fastest_page.title or 'N/A')
+        fastest_html = f'''<div class="perf-highlight">
+            <p style="font-size: 2rem; font-weight: bold; color: #22c55e;">{fastest_page.load_time:.2f}s</p>
+            <p style="margin-top: 0.5rem;"><a href="{html.escape(fastest_page.url)}" target="_blank">{html.escape(fastest_page.url[:60])}...</a></p>
+            <p style="margin-top: 0.5rem; color: var(--muted); font-size: 0.9rem;">Title: {html.escape(fastest_title)}</p>
+        </div>'''
+    else:
+        fastest_html = '<p>Aucune donnée de performance disponible</p>'
+
+    if slowest_page:
+        slowest_title = slowest_page.title[:50] + '...' if slowest_page.title and len(slowest_page.title) > 50 else (slowest_page.title or 'N/A')
+        slow_color = '#ef4444' if slowest_page.load_time > 3 else '#f59e0b'
+        slow_class = 'slow' if slowest_page.load_time > 3 else ''
+        slowest_html = f'''<div class="perf-highlight {slow_class}">
+            <p style="font-size: 2rem; font-weight: bold; color: {slow_color};">{slowest_page.load_time:.2f}s</p>
+            <p style="margin-top: 0.5rem;"><a href="{html.escape(slowest_page.url)}" target="_blank">{html.escape(slowest_page.url[:60])}...</a></p>
+            <p style="margin-top: 0.5rem; color: var(--muted); font-size: 0.9rem;">Title: {html.escape(slowest_title)}</p>
+        </div>'''
+    else:
+        slowest_html = '<p>Aucune donnée de performance disponible</p>'
+
     html_content = f'''<!DOCTYPE html>
 <html lang="fr">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Rapport SEO - {html.escape(url)}</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <style>
-        :root {{ --bg: #f8fafc; --card: #ffffff; --text: #1e293b; --muted: #64748b; --border: #e2e8f0; }}
+        :root {{ --bg: #f8fafc; --card: #ffffff; --text: #1e293b; --muted: #64748b; --border: #e2e8f0; --primary: #3b82f6; }}
         * {{ box-sizing: border-box; margin: 0; padding: 0; }}
         body {{ font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: var(--bg); color: var(--text); line-height: 1.6; padding: 2rem; }}
-        .container {{ max-width: 1200px; margin: 0 auto; }}
-        .header {{ text-align: center; margin-bottom: 2rem; padding: 2rem; background: var(--card); border-radius: 12px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }}
-        .header h1 {{ font-size: 1.75rem; margin-bottom: 0.5rem; }}
-        .header p {{ color: var(--muted); }}
-        .score-card {{ display: inline-block; padding: 1.5rem 3rem; background: {score_color}; color: white; border-radius: 12px; margin: 1rem 0; }}
-        .score-card .score {{ font-size: 3rem; font-weight: bold; }}
-        .score-card .label {{ font-size: 1.25rem; opacity: 0.9; }}
-        .grid {{ display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 1rem; margin: 1.5rem 0; }}
-        .card {{ background: var(--card); padding: 1.5rem; border-radius: 12px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }}
-        .card h2 {{ font-size: 1.25rem; margin-bottom: 1rem; display: flex; align-items: center; gap: 0.5rem; }}
+        .container {{ max-width: 1400px; margin: 0 auto; }}
+        .header {{ text-align: center; margin-bottom: 2rem; padding: 2.5rem; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; border-radius: 16px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }}
+        .header h1 {{ font-size: 2rem; margin-bottom: 0.5rem; }}
+        .header p {{ opacity: 0.9; }}
+        .score-card {{ display: inline-block; padding: 2rem 4rem; background: rgba(255,255,255,0.2); backdrop-filter: blur(10px); color: white; border-radius: 16px; margin: 1.5rem 0; }}
+        .score-card .score {{ font-size: 4rem; font-weight: bold; }}
+        .score-card .label {{ font-size: 1.5rem; opacity: 0.95; }}
+        .grid {{ display: grid; grid-template-columns: repeat(auto-fit, minmax(350px, 1fr)); gap: 1.5rem; margin: 1.5rem 0; }}
+        .card {{ background: var(--card); padding: 1.5rem; border-radius: 12px; box-shadow: 0 2px 8px rgba(0,0,0,0.08); border: 1px solid var(--border); }}
+        .card h2 {{ font-size: 1.25rem; margin-bottom: 1rem; display: flex; align-items: center; gap: 0.5rem; color: #1e293b; }}
         .stat {{ display: flex; justify-content: space-between; padding: 0.75rem 0; border-bottom: 1px solid var(--border); }}
         .stat:last-child {{ border-bottom: none; }}
         .stat-value {{ font-weight: 600; }}
@@ -691,67 +753,253 @@ def export_to_html(
         .stat-value.warn {{ color: #f59e0b; }}
         .stat-value.error {{ color: #ef4444; }}
         .list {{ list-style: none; }}
-        .list li {{ padding: 0.5rem 0; border-bottom: 1px solid var(--border); font-size: 0.9rem; }}
+        .list li {{ padding: 0.75rem 0; border-bottom: 1px solid var(--border); font-size: 0.9rem; }}
         .list li:last-child {{ border-bottom: none; }}
-        .list a {{ color: #3b82f6; text-decoration: none; }}
+        .list a {{ color: var(--primary); text-decoration: none; word-break: break-all; }}
         .list a:hover {{ text-decoration: underline; }}
         .badge {{ display: inline-block; padding: 0.25rem 0.75rem; border-radius: 9999px; font-size: 0.75rem; font-weight: 500; }}
         .badge-cms {{ background: #dbeafe; color: #1d4ed8; }}
-        .footer {{ text-align: center; margin-top: 2rem; padding: 1rem; color: var(--muted); font-size: 0.875rem; }}
-        .progress-bar {{ height: 8px; background: var(--border); border-radius: 4px; overflow: hidden; margin: 0.5rem 0; }}
-        .progress-fill {{ height: 100%; background: {score_color}; transition: width 0.3s; }}
+        .badge-og {{ background: #dcfce7; color: #16a34a; }}
+        .badge-twitter {{ background: #e0f2fe; color: #0284c7; }}
+        .badge-jsonld {{ background: #fef3c7; color: #d97706; }}
+        .footer {{ text-align: center; margin-top: 3rem; padding: 1.5rem; color: var(--muted); font-size: 0.875rem; border-top: 1px solid var(--border); }}
+        .progress-bar {{ height: 10px; background: var(--border); border-radius: 5px; overflow: hidden; margin: 0.5rem 0; }}
+        .progress-fill {{ height: 100%; background: linear-gradient(90deg, #22c55e, #16a34a); transition: width 0.3s; }}
+        .pagespeed-btn {{ display: inline-block; padding: 0.75rem 1.5rem; background: #4285f4; color: white; text-decoration: none; border-radius: 8px; font-weight: 500; margin-top: 1rem; transition: background 0.2s; }}
+        .pagespeed-btn:hover {{ background: #3367d6; }}
+        .chart-container {{ position: relative; height: 300px; margin-top: 1rem; }}
+        .perf-highlight {{ background: linear-gradient(135deg, #f0fdf4 0%, #dcfce7 100%); padding: 1rem; border-radius: 8px; margin: 1rem 0; border: 1px solid #86efac; }}
+        .perf-highlight.slow {{ background: linear-gradient(135deg, #fef2f2 0%, #fee2e2 100%); border-color: #fca5a5; }}
+        .section-title {{ font-size: 1.5rem; margin: 2rem 0 1rem; padding-bottom: 0.5rem; border-bottom: 2px solid var(--border); }}
+        .seo-item {{ display: flex; align-items: center; padding: 0.5rem 0; }}
+        .seo-item-icon {{ min-width: 24px; margin-right: 0.75rem; }}
+        .seo-item-content {{ flex: 1; }}
+        .seo-item-status {{ font-weight: 500; }}
+        @media (max-width: 768px) {{
+            body {{ padding: 1rem; }}
+            .grid {{ grid-template-columns: 1fr; }}
+            .score-card {{ padding: 1.5rem 2rem; }}
+            .score-card .score {{ font-size: 3rem; }}
+        }}
     </style>
 </head>
 <body>
     <div class="container">
         <div class="header">
-            <h1>🔍 Rapport SEO</h1>
+            <h1>🔍 Rapport SEO & Performance</h1>
             <p>{html.escape(url)}</p>
-            <p>Généré le {datetime.now().strftime('%d/%m/%Y à %H:%M')} • Durée: {duration:.1f}s</p>
+            <p>Généré le {datetime.now().strftime('%d/%m/%Y à %H:%M')} • Analyse complète</p>
             <div class="score-card">
                 <div class="score">{score}/100</div>
                 <div class="label">{score_label}</div>
             </div>
             <br>
-            <span class="badge badge-cms">📦 CMS: {html.escape(cms_detected)}</span>
+            <span class="badge badge-cms" style="font-size: 0.9rem; padding: 0.5rem 1rem;">📦 CMS détecté : {html.escape(cms_detected)}</span>
+            <br>
+            <a href="{pagespeed_url}" target="_blank" class="pagespeed-btn">
+                🚀 Voir le rapport Google PageSpeed Insights
+            </a>
         </div>
-        
+
+        <h2 class="section-title">📊 Vue d'ensemble</h2>
         <div class="grid">
             <div class="card">
-                <h2>📄 Pages</h2>
-                <div class="stat"><span>Total analysé</span><span class="stat-value">{len(pages)}</span></div>
+                <h2>📄 Pages analysées</h2>
+                <div class="stat"><span>Total</span><span class="stat-value">{len(pages)}</span></div>
                 <div class="stat"><span>Dans le sitemap</span><span class="stat-value">{len(sitemap)}</span></div>
-                <div class="stat"><span>Erreurs</span><span class="stat-value {'error' if errors else 'ok'}">{len(errors)}</span></div>
-                <div class="stat"><span>Pages lentes (&gt;3s)</span><span class="stat-value {'warn' if slow_pages else 'ok'}">{len(slow_pages)}</span></div>
+                <div class="stat"><span>Pages avec erreurs</span><span class="stat-value {'error' if errors else 'ok'}">{len(errors)}</span></div>
+                <div class="stat"><span>Pages avec liens brisés</span><span class="stat-value {'error' if any(p.broken_links for p in pages) else 'ok'}">{sum(1 for p in pages if p.broken_links)}</span></div>
             </div>
-            
+
             <div class="card">
-                <h2>📝 Contenu</h2>
+                <h2>📝 Qualité du contenu</h2>
                 <div class="stat"><span>Pages sans title</span><span class="stat-value {'error' if no_title else 'ok'}">{len(no_title)}</span></div>
                 <div class="stat"><span>Pages sans meta description</span><span class="stat-value {'warn' if no_meta else 'ok'}">{len(no_meta)}</span></div>
                 <div class="stat"><span>Pages sans H1</span><span class="stat-value {'error' if no_h1 else 'ok'}">{len(no_h1)}</span></div>
                 <div class="stat"><span>Pages avec H1 multiples</span><span class="stat-value {'warn' if multi_h1 else 'ok'}">{len(multi_h1)}</span></div>
             </div>
-            
+
             <div class="card">
                 <h2>🖼️ Images</h2>
-                <div class="stat"><span>Total</span><span class="stat-value">{len(images)}</span></div>
-                <div class="stat"><span>Sans attribut alt</span><span class="stat-value {'warn' if missing_alt else 'ok'}">{len(missing_alt)}</span></div>
+                <div class="stat"><span>Total des images</span><span class="stat-value">{len(images)}</span></div>
+                <div class="stat"><span>Images sans alt</span><span class="stat-value {'warn' if missing_alt else 'ok'}">{len(missing_alt)}</span></div>
+                <div class="stat"><span>Taux de conformité</span><span class="stat-value {'ok' if not missing_alt else 'warn'}">{round((1 - len(missing_alt)/len(images))*100 if images else 100, 1)}%</span></div>
             </div>
-            
+
             <div class="card">
                 <h2>⚡ Performance</h2>
-                <div class="stat"><span>Temps moyen</span><span class="stat-value">{sum(p.load_time for p in pages)/len(pages):.2f}s</span></div>
-                <div class="stat"><span>Pages rapides</span><span class="stat-value ok">{len(pages) - len(slow_pages)}/{len(pages)}</span></div>
+                <div class="stat"><span>Temps moyen</span><span class="stat-value">{avg_load_time:.2f}s</span></div>
+                <div class="stat"><span>Page la plus rapide</span><span class="stat-value ok">{fastest_page.load_time:.2f}s</span></div>
+                <div class="stat"><span>Page la plus lente</span><span class="stat-value {'warn' if slowest_page and slowest_page.load_time > 3 else 'ok'}">{slowest_page.load_time:.2f}s</span></div>
+                <div class="stat"><span>Pages lentes (&gt;3s)</span><span class="stat-value {'warn' if slow_pages else 'ok'}">{len(slow_pages)}</span></div>
+            </div>
+        </div>
+
+        <!-- Performance détaillée -->
+        <h2 class="section-title">⚡ Analyse détaillée des performances</h2>
+        <div class="grid">
+            <div class="card">
+                <h2>🏆 Page la plus rapide</h2>
+                {fastest_html}
+            </div>
+
+            <div class="card">
+                <h2>🐌 Page la plus lente</h2>
+                {slowest_html}
+            </div>
+        </div>
+
+        <div class="card" style="margin-top: 1.5rem;">
+            <h2>📈 Temps de chargement par page (top 20)</h2>
+            <div class="chart-container">
+                <canvas id="loadTimeChart"></canvas>
+            </div>
+        </div>
+
+        <!-- SEO Avancé -->
+        <h2 class="section-title">🔎 Audit SEO Avancé</h2>
+        <div class="grid">
+            <div class="card">
+                <h2>📋 Meta Tags</h2>
+                <div class="seo-item">
+                    <span class="seo-item-icon">{'✅' if all(p.title for p in pages) else '⚠️'}</span>
+                    <div class="seo-item-content">
+                        <strong>Balise &lt;title&gt;</strong>
+                        <p style="color: var(--muted); font-size: 0.85rem;">{len([p for p in pages if p.title])}/{len(pages)} pages avec un title</p>
+                    </div>
+                    <span class="seo-item-status {'ok' if all(p.title for p in pages) else 'warn'}">{round(len([p for p in pages if p.title])/len(pages)*100 if pages else 0, 1)}%</span>
+                </div>
+                <div class="seo-item">
+                    <span class="seo-item-icon">{'✅' if all(p.meta_description for p in pages) else '⚠️'}</span>
+                    <div class="seo-item-content">
+                        <strong>Meta Description</strong>
+                        <p style="color: var(--muted); font-size: 0.85rem;">{len([p for p in pages if p.meta_description])}/{len(pages)} pages avec une description</p>
+                    </div>
+                    <span class="seo-item-status {'ok' if all(p.meta_description for p in pages) else 'warn'}">{round(len([p for p in pages if p.meta_description])/len(pages)*100 if pages else 0, 1)}%</span>
+                </div>
+                <div class="seo-item">
+                    <span class="seo-item-icon">{'✅' if all(p.canonical for p in pages) else '⚠️'}</span>
+                    <div class="seo-item-content">
+                        <strong>URL Canonique</strong>
+                        <p style="color: var(--muted); font-size: 0.85rem;">{len([p for p in pages if p.canonical])}/{len(pages)} pages avec canonical</p>
+                    </div>
+                    <span class="seo-item-status {'ok' if all(p.canonical for p in pages) else 'warn'}">{round(len([p for p in pages if p.canonical])/len(pages)*100 if pages else 0, 1)}%</span>
+                </div>
+                <div class="seo-item">
+                    <span class="seo-item-icon">{'✅' if all(p.lang for p in pages) else '⚠️'}</span>
+                    <div class="seo-item-content">
+                        <strong>Attribut Lang</strong>
+                        <p style="color: var(--muted); font-size: 0.85rem;">{len([p for p in pages if p.lang])}/{len(pages)} pages avec lang défini</p>
+                    </div>
+                    <span class="seo-item-status {'ok' if all(p.lang for p in pages) else 'warn'}">{round(len([p for p in pages if p.lang])/len(pages)*100 if pages else 0, 1)}%</span>
+                </div>
+            </div>
+
+            <div class="card">
+                <h2>🌐 Open Graph (Réseaux sociaux)</h2>
+                <div class="seo-item">
+                    <span class="seo-item-icon">{'✅' if pages_with_og else '❌'}</span>
+                    <div class="seo-item-content">
+                        <strong>Présence Open Graph</strong>
+                        <p style="color: var(--muted); font-size: 0.85rem;">{len(pages_with_og)}/{len(pages)} pages avec OG tags</p>
+                    </div>
+                    <span class="badge badge-og">{round(len(pages_with_og)/len(pages)*100 if pages else 0, 1)}%</span>
+                </div>
+                <div class="seo-item">
+                    <span class="seo-item-icon">▫️</span>
+                    <div class="seo-item-content">
+                        <strong>og:title</strong>
+                        <p style="color: var(--muted); font-size: 0.85rem;">{len([p for p in pages if p.og_title])} pages</p>
+                    </div>
+                </div>
+                <div class="seo-item">
+                    <span class="seo-item-icon">▫️</span>
+                    <div class="seo-item-content">
+                        <strong>og:description</strong>
+                        <p style="color: var(--muted); font-size: 0.85rem;">{len([p for p in pages if p.og_description])} pages</p>
+                    </div>
+                </div>
+                <div class="seo-item">
+                    <span class="seo-item-icon">▫️</span>
+                    <div class="seo-item-content">
+                        <strong>og:image</strong>
+                        <p style="color: var(--muted); font-size: 0.85rem;">{len([p for p in pages if p.og_image])} pages</p>
+                    </div>
+                </div>
+                <p style="margin-top: 1rem; padding: 0.75rem; background: #f0f9ff; border-radius: 8px; font-size: 0.85rem;">
+                    💡 <strong>Conseil :</strong> Les balises Open Graph améliorent l'affichage de vos pages sur Facebook, LinkedIn et autres réseaux sociaux.
+                </p>
+            </div>
+
+            <div class="card">
+                <h2>🐦 Twitter Card</h2>
+                <div class="seo-item">
+                    <span class="seo-item-icon">{'✅' if pages_with_twitter else '❌'}</span>
+                    <div class="seo-item-content">
+                        <strong>Présence Twitter Card</strong>
+                        <p style="color: var(--muted); font-size: 0.85rem;">{len(pages_with_twitter)}/{len(pages)} pages avec Twitter Card</p>
+                    </div>
+                    <span class="badge badge-twitter">{round(len(pages_with_twitter)/len(pages)*100 if pages else 0, 1)}%</span>
+                </div>
+                <div class="seo-item">
+                    <span class="seo-item-icon">▫️</span>
+                    <div class="seo-item-content">
+                        <strong>twitter:card</strong>
+                        <p style="color: var(--muted); font-size: 0.85rem;">{len([p for p in pages if p.twitter_card])} pages configurées</p>
+                    </div>
+                </div>
+                <p style="margin-top: 1rem; padding: 0.75rem; background: #f0f9ff; border-radius: 8px; font-size: 0.85rem;">
+                    💡 <strong>Conseil :</strong> Twitter Card permet d'afficher un aperçu enrichi de vos pages sur Twitter.
+                </p>
+            </div>
+
+            <div class="card">
+                <h2>📊 Structured Data (JSON-LD)</h2>
+                <div class="seo-item">
+                    <span class="seo-item-icon">⚠️</span>
+                    <div class="seo-item-content">
+                        <strong>Données structurées</strong>
+                        <p style="color: var(--muted); font-size: 0.85rem;">Vérification manuelle recommandée</p>
+                    </div>
+                </div>
+                <p style="margin-top: 1rem; padding: 0.75rem; background: #fef3c7; border-radius: 8px; font-size: 0.85rem;">
+                    🔍 <strong>Vérification :</strong> Utilisez le <a href="https://search.google.com/test/rich-results" target="_blank" style="color: #d97706;">Google Rich Results Test</a> pour vérifier les données structurées de votre site.
+                </p>
+                <p style="margin-top: 0.5rem; padding: 0.75rem; background: #f0f9ff; border-radius: 8px; font-size: 0.85rem;">
+                    💡 <strong>Conseil :</strong> Le JSON-LD améliore l'affichage dans les résultats de recherche (rich snippets).
+                </p>
+            </div>
+        </div>
+
+        <!-- Recommandations PageSpeed -->
+        <h2 class="section-title">🚀 Optimisations recommandées</h2>
+        <div class="card">
+            <h2>💡 Améliorations PageSpeed Insights</h2>
+            <p style="margin-bottom: 1rem;">Cliquez sur le bouton ci-dessous pour obtenir une analyse détaillée des performances de votre site avec des recommandations personnalisées de Google :</p>
+            <div style="text-align: center;">
+                <a href="{pagespeed_url}" target="_blank" class="pagespeed-btn" style="font-size: 1.1rem; padding: 1rem 2rem;">
+                    🚀 Lancer l'analyse PageSpeed Insights
+                </a>
+            </div>
+            <div style="margin-top: 1.5rem; padding: 1rem; background: #f0fdf4; border-radius: 8px; border-left: 4px solid #22c55e;">
+                <p style="font-weight: 500;">✅ Optimisations courantes à vérifier :</p>
+                <ul style="margin-top: 0.5rem; margin-left: 1.5rem; color: var(--muted);">
+                    <li>Compression et optimisation des images (WebP, AVIF)</li>
+                    <li>Minification CSS et JavaScript</li>
+                    <li>Mise en cache navigateur</li>
+                    <li>Chargement différé (lazy loading) des images</li>
+                    <li>Réduction du temps de réponse serveur (TTFB)</li>
+                    <li>Élimination des ressources bloquant le rendu</li>
+                </ul>
             </div>
         </div>
 '''
-    
+
     # Ajouter les détails des erreurs si présentes
     if errors or no_title or no_meta or no_h1 or multi_h1 or missing_alt:
         html_content += '''
+        <h2 class="section-title">⚠️ Points d'attention</h2>
         <div class="card">
-            <h2>⚠️ Points d'attention</h2>
             <ul class="list">
 '''
         if errors:
@@ -772,21 +1020,79 @@ def export_to_html(
         if missing_alt:
             for img in missing_alt[:10]:
                 html_content += f'<li>🟡 <strong>Image sans alt</strong>: {html.escape(img.src[:70])}... (page: <a href="{html.escape(img.page_url)}" target="_blank">lien</a>)</li>'
-        
+
         html_content += '''
             </ul>
         </div>
 '''
-    
+
+    # Script pour le graphique
+    chart_labels = json.dumps([d['url'] for d in chart_data])
+    chart_values = json.dumps([d['time'] for d in chart_data])
+
     html_content += f'''
         <div class="footer">
             <p>Généré avec Python Scraper & SEO Analyzer</p>
+            <p style="margin-top: 0.5rem;">Rapport à destination des clients • {datetime.now().strftime('%Y')}</p>
         </div>
     </div>
+
+    <script>
+        // Graphique des temps de chargement
+        const ctx = document.getElementById('loadTimeChart').getContext('2d');
+        new Chart(ctx, {{
+            type: 'bar',
+            data: {{
+                labels: {chart_labels},
+                datasets: [{{
+                    label: 'Temps de chargement (s)',
+                    data: {chart_values},
+                    backgroundColor: function(context) {{
+                        const value = context.raw;
+                        if (value <= 1) return '#22c55e';  // vert
+                        if (value <= 2.5) return '#f59e0b';  // orange
+                        return '#ef4444';  // rouge
+                    }},
+                    borderRadius: 4
+                }}]
+            }},
+            options: {{
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {{
+                    legend: {{
+                        display: false
+                    }},
+                    tooltip: {{
+                        callbacks: {{
+                            label: function(context) {{
+                                return context.parsed.y.toFixed(2) + 's';
+                            }}
+                        }}
+                    }}
+                }},
+                scales: {{
+                    y: {{
+                        beginAtZero: true,
+                        title: {{
+                            display: true,
+                            text: 'Temps (secondes)'
+                        }}
+                    }},
+                    x: {{
+                        ticks: {{
+                            maxRotation: 45,
+                            minRotation: 45
+                        }}
+                    }}
+                }}
+            }}
+        }});
+    </script>
 </body>
 </html>
 '''
-    
+
     with open(filepath, 'w', encoding='utf-8') as f:
         f.write(html_content)
 
